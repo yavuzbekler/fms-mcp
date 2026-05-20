@@ -6,10 +6,9 @@ MODE="${1:-mcp}"
 if [ "$MODE" = "mcp" ]; then
   exec supergateway \
     --stdio "node /app/dist/index.js" \
+    --outputTransport streamableHttp \
     --port "${SUPERGATEWAY_PORT:-8080}" \
-    --baseUrl "${SUPERGATEWAY_BASE_URL:-http://localhost:8080}" \
-    --ssePath /sse \
-    --messagePath /message \
+    --streamableHttpPath /mcp \
     --healthEndpoint /health-supergateway
 elif [ "$MODE" = "stdio" ]; then
   exec node /app/dist/index.js
