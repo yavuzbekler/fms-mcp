@@ -9,7 +9,9 @@ if [ "$MODE" = "mcp" ]; then
     --outputTransport streamableHttp \
     --port "${SUPERGATEWAY_PORT:-8080}" \
     --streamableHttpPath /mcp \
-    --healthEndpoint /health-supergateway
+    --healthEndpoint /health-supergateway \
+    --stateful \
+    --sessionTimeout "${SESSION_TIMEOUT_MS:-300000}"
 elif [ "$MODE" = "stdio" ]; then
   exec node /app/dist/index.js
 elif [ "$MODE" = "shell" ]; then
