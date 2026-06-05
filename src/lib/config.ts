@@ -19,6 +19,19 @@ const configSchema = z.object({
   DEFAULT_COMMAND_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   MAX_COMMAND_TIMEOUT_MS: z.coerce.number().int().positive().default(300_000),
   HEALTH_PORT: z.coerce.number().int().positive().optional(),
+  MCP_HTTP_PORT: z.coerce.number().int().positive().optional(),
+  SUPERGATEWAY_PORT: z.coerce.number().int().positive().optional(),
+  PUBLIC_BASE_URL: z.string().url().optional(),
+  OAUTH_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
+  OAUTH_ISSUER: z.string().url().optional(),
+  OAUTH_JWKS_URI: z.string().url().optional(),
+  OAUTH_AUDIENCE: z.string().min(1).optional(),
+  OAUTH_CLIENT_ID: z.string().min(1).optional(),
+  OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
+  CORS_EXTRA_ORIGINS: z.string().default(""),
   AUDIT_ENABLED: z
     .enum(["true", "false"])
     .default("true")
@@ -47,6 +60,16 @@ export function loadConfig(): Config & { resolvedAuditDir: string; resolvedAudit
       DEFAULT_COMMAND_TIMEOUT_MS: process.env["DEFAULT_COMMAND_TIMEOUT_MS"],
       MAX_COMMAND_TIMEOUT_MS: process.env["MAX_COMMAND_TIMEOUT_MS"],
       HEALTH_PORT: process.env["HEALTH_PORT"],
+      MCP_HTTP_PORT: process.env["MCP_HTTP_PORT"],
+      SUPERGATEWAY_PORT: process.env["SUPERGATEWAY_PORT"],
+      PUBLIC_BASE_URL: process.env["PUBLIC_BASE_URL"],
+      OAUTH_ENABLED: process.env["OAUTH_ENABLED"],
+      OAUTH_ISSUER: process.env["OAUTH_ISSUER"],
+      OAUTH_JWKS_URI: process.env["OAUTH_JWKS_URI"],
+      OAUTH_AUDIENCE: process.env["OAUTH_AUDIENCE"],
+      OAUTH_CLIENT_ID: process.env["OAUTH_CLIENT_ID"],
+      OAUTH_CLIENT_SECRET: process.env["OAUTH_CLIENT_SECRET"],
+      CORS_EXTRA_ORIGINS: process.env["CORS_EXTRA_ORIGINS"],
       AUDIT_ENABLED: process.env["AUDIT_ENABLED"],
       AUDIT_DIR: process.env["AUDIT_DIR"],
       AUDIT_ARCHIVE_DIR: process.env["AUDIT_ARCHIVE_DIR"],
@@ -58,6 +81,18 @@ export function loadConfig(): Config & { resolvedAuditDir: string; resolvedAudit
   }
   const auditDir = _config.AUDIT_DIR ?? `${_config.WORKSPACE_ROOT}/.fms-mcp/audit`;
   const auditArchiveDir = _config.AUDIT_ARCHIVE_DIR ?? `${_config.WORKSPACE_ROOT}/.fms-mcp/audit-archive`;
+  if (_config.OAUTH_ENABLED) {
+    const missing = [
+      "PUBLIC_BASE_URL",
+      "OAUTH_ISSUER",
+      "OAUTH_JWKS_URI",
+      "OAUTH_AUDIENCE",
+      "OAUTH_CLIENT_ID",
+    ].filter((key) => !_config![key as keyof Config]);
+    if (missing.length > 0) {
+      throw new Error(`Missing OAuth config: ${missing.join(", ")}`);
+    }
+  }
   return { ..._config, resolvedAuditDir: auditDir, resolvedAuditArchiveDir: auditArchiveDir };
 }
 

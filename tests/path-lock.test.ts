@@ -266,6 +266,21 @@ describe("validatePath", () => {
     );
   });
 
+  it("workspace dışına gösteren symlink altındaki yeni dosyayı reddeder", async () => {
+    const outsideDir = "/tmp/fms-pathlock-outside";
+    await fs.rm(outsideDir, { recursive: true, force: true });
+    await fs.mkdir(outsideDir, { recursive: true });
+
+    const symlinkPath = path.join(TEST_WORKSPACE, "opop", "escape-dir");
+    await fs.symlink(outsideDir, symlinkPath);
+
+    await expect(
+      validatePath(path.join(symlinkPath, "new-file.txt"), "write"),
+    ).rejects.toThrow(PathOutsideWorkspaceError);
+
+    await fs.rm(outsideDir, { recursive: true, force: true });
+  });
+
   it("workspace içine gösteren symlink'i kabul eder", async () => {
     const targetPath = path.join(TEST_WORKSPACE, "opop", "file.ts");
     const symlinkPath = path.join(TEST_WORKSPACE, "opop", "internal-link");
@@ -294,5 +309,20 @@ describe("validatePath", () => {
       "write",
     );
     expect(result).toBe(path.join(TEST_WORKSPACE, "opop", "file.ts"));
+  });
+
+  it("workspace içindeki symlink altındaki yeni dosyayı gerçek yola çözer", async () => {
+    const targetDir = path.join(TEST_WORKSPACE, "opop", "target-dir");
+    await fs.mkdir(targetDir);
+
+    const symlinkPath = path.join(TEST_WORKSPACE, "opop", "internal-dir-link");
+    await fs.symlink(targetDir, symlinkPath);
+
+    const result = await validatePath(
+      path.join(symlinkPath, "new-file.txt"),
+      "write",
+    );
+
+    expect(result).toBe(path.join(targetDir, "new-file.txt"));
   });
 });

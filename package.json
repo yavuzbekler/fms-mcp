@@ -16,6 +16,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
     "fast-glob": "^3.3.3",
+    "jose": "^6.2.3",
     "node-cron": "^4.2.1",
     "pino": "^9.6.0",
     "tar": "^7.5.14",

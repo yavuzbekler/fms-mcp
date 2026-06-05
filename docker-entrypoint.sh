@@ -4,6 +4,8 @@ set -e
 MODE="${1:-mcp}"
 
 if [ "$MODE" = "mcp" ]; then
+  exec node /app/dist/http-index.js
+elif [ "$MODE" = "sse" ]; then
   exec supergateway \
     --stdio "node /app/dist/index.js" \
     --outputTransport streamableHttp \

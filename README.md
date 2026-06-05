@@ -120,6 +120,47 @@ search_code pattern="write_file" path=/workspace/.fms-mcp/audit/opop/
 | `AUDIT_FLUSH_INTERVAL_MS` | `100` | Buffer flush aralığı |
 | `AUDIT_BUFFER_BYTES` | `4096` | Buffer boyutu |
 
+## Claude.ai + Authentik
+
+FMS-MCP native Streamable HTTP endpoint'i ve Authentik uyumlu OAuth façade'i aynı process içinde sunar.
+
+Claude connector URL:
+
+```text
+https://mcp-proxy.xoka.workers.dev/fms/mcp
+```
+
+Authentik provider ayarı:
+
+```text
+Redirect URI: https://claude.ai/api/mcp/auth_callback
+```
+
+Gerekli env değişkenleri:
+
+| Değişken | Açıklama |
+|----------|----------|
+| `OAUTH_ENABLED=true` | `/mcp` endpoint'inde Bearer auth zorunlu olur |
+| `PUBLIC_BASE_URL` | Public MCP service base URL; örn. `https://mcp-proxy.xoka.workers.dev/fms` |
+| `OAUTH_ISSUER` | Authentik provider issuer; örn. `https://auth.xoka.com/application/o/fms-mcp/` |
+| `OAUTH_JWKS_URI` | Authentik JWKS endpoint'i |
+| `OAUTH_AUDIENCE` | Authentik client ID / token audience |
+| `OAUTH_CLIENT_ID` | Claude'a DCR/register yanıtında dönen client ID |
+| `OAUTH_CLIENT_SECRET` | Token proxy'nin Authentik'e eklediği confidential client secret |
+
+Public OAuth endpoints:
+
+```text
+/fms/.well-known/oauth-protected-resource
+/fms/.well-known/oauth-authorization-server
+/fms/authorize
+/fms/token
+/fms/register
+/fms/mcp
+```
+
+Not: `PUBLIC_BASE_URL` path içeriyorsa (`/fms` gibi), aynı path altında endpoint'ler açılır. Reverse proxy path'i strip ediyorsa `/mcp` de desteklenir.
+
 ## Docker
 
 ### Build
@@ -140,13 +181,14 @@ docker compose up -d
 # Health kontrolü
 curl http://localhost:8081/health
 
-# SSE endpoint
-curl -i http://localhost:8080/sse
+# MCP endpoint
+curl -i http://localhost:8080/mcp
 
-# MCP tools/list
-curl -X POST http://localhost:8080/message \
+# MCP initialize (Streamable HTTP)
+curl -X POST http://localhost:8080/mcp \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"curl","version":"0.0.1"}}}'
 
 # Durdur
 docker compose down
@@ -166,7 +208,8 @@ Host'taki `/home/yavuz/workspace/` dizini container'da `/workspace` olarak mount
 
 | Komut | Açıklama |
 |-------|----------|
-| `mcp` (varsayılan) | supergateway ile HTTP/SSE bridge |
+| `mcp` (varsayılan) | Native Streamable HTTP MCP (`/mcp`) |
+| `sse` | supergateway ile legacy HTTP/SSE bridge (`/sse`, `/message`) |
 | `stdio` | Direkt stdio modu (debug) |
 | `shell` | Debug shell |
 
@@ -177,16 +220,25 @@ Detaylar `.env.example` dosyasında. Temel değişkenler:
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
 | `WORKSPACE_ROOT` | `/workspace` | Workspace kök dizini |
-| `SUPERGATEWAY_PORT` | `8080` | MCP/SSE portu |
+| `MCP_HTTP_PORT` | `8080` | Native MCP HTTP portu |
+| `SUPERGATEWAY_PORT` | `8080` | Legacy SSE portu veya `MCP_HTTP_PORT` yoksa native port |
 | `HEALTH_PORT` | `8081` | Health endpoint portu |
 | `LOG_LEVEL` | `info` | Log seviyesi |
-| `SUPERGATEWAY_BASE_URL` | `http://localhost:8080` | SSE absolute URL'leri için |
+| `OAUTH_ENABLED` | `false` | Authentik/OAuth korumasını açar |
+| `PUBLIC_BASE_URL` | - | Claude'ın gördüğü public base URL |
+| `OAUTH_ISSUER` | - | Authentik OAuth provider URL'i |
+| `OAUTH_JWKS_URI` | - | Authentik JWKS endpoint'i |
+| `OAUTH_AUDIENCE` | - | Authentik client ID / audience |
+| `OAUTH_CLIENT_ID` | - | Claude için OAuth client ID |
+| `OAUTH_CLIENT_SECRET` | - | Authentik confidential client secret |
+| `SUPERGATEWAY_BASE_URL` | `http://localhost:8080` | Sadece legacy SSE absolute URL'leri için |
 
 ### Troubleshooting
 
 - **Permission denied** → Host UID 1000 mi kontrol et (`id -u`), workspace ownership doğru mu
 - **Health endpoint 404** → Port 8081 forwarded mi, `HEALTH_PORT` env var set mi
 - **Tool call timeout** → `SUPERGATEWAY_BASE_URL` deploy ortamına göre ayarlanmış mı
+- **Authorization failed** → `PUBLIC_BASE_URL` Claude connector URL'inin base'iyle aynı mı, `/.well-known/oauth-protected-resource` 200 dönüyor mu, 401 yanıtında `WWW-Authenticate` içinde `resource_metadata` var mı kontrol et
 
 ## Sonraki Adımlar
 

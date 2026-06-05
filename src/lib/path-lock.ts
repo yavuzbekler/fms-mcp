@@ -20,7 +20,26 @@ export async function resolvePathWithSymlink(input: string): Promise<string> {
   try {
     return await fs.realpath(resolved);
   } catch {
-    return resolved;
+    return await resolveNonexistentPathWithSymlink(resolved);
+  }
+}
+
+async function resolveNonexistentPathWithSymlink(resolved: string): Promise<string> {
+  let current = resolved;
+  const missingSegments: string[] = [];
+
+  while (true) {
+    try {
+      const realAncestor = await fs.realpath(current);
+      return path.join(realAncestor, ...missingSegments.reverse());
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) {
+        return resolved;
+      }
+      missingSegments.push(path.basename(current));
+      current = parent;
+    }
   }
 }
 
