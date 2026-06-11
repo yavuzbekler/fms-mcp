@@ -20,6 +20,7 @@ import { listProcesses } from "./tools/list-processes.js";
 import { getWorkspaceInfo } from "./tools/get-workspace-info.js";
 import { tailFile } from "./tools/tail-file.js";
 import { healthCheck } from "./tools/health-check.js";
+import { openaiSearch, openaiFetch } from "./tools/openai-compat.js";
 import { logger } from "./lib/logger.js";
 import { validatePath } from "./lib/path-lock.js";
 import { FmsError, serializeError } from "./lib/errors.js";
@@ -49,6 +50,8 @@ const tools: ToolDefinition[] = [
   getWorkspaceInfo,
   tailFile,
   healthCheck,
+  openaiSearch,
+  openaiFetch,
 ];
 
 async function validateToolPaths(
