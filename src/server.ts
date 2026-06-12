@@ -1,5 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { ToolDefinition, AuditEntry } from "./types/index.js";
+import type { ToolDefinition, ToolResult, AuditEntry } from "./types/index.js";
 import { ping } from "./tools/ping.js";
 import { readFile } from "./tools/read-file.js";
 import { readMultipleFiles } from "./tools/read-multiple-files.js";
@@ -173,7 +173,7 @@ export function createServer(): McpServer {
       async (args) => {
         logger.info({ tool: tool.name }, "tool called");
         const startedAt = Date.now();
-        let toolResult: { content: Array<{ type: "text"; text: string }>; isError?: boolean } | null = null;
+        let toolResult: ToolResult | null = null;
         let toolError: unknown = null;
 
         try {

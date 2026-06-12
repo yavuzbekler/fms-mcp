@@ -14,6 +14,8 @@ import { FileNotFoundError, FileTooLargeError, IsDirectoryError } from "../lib/e
 
 const MAX_RESULTS = 20;
 const MAX_FETCH_BYTES = 1_000_000;
+const MAX_SEARCH_OUTPUT_BYTES = 2_000_000;
+const MAX_RIPGREP_JSON_LINE_CHARS = 32_000;
 
 interface SearchResult {
   id: string;
@@ -32,37 +34,102 @@ function toResult(workspaceRoot: string, absolutePath: string, snippet?: string)
 
 function searchContent(workspaceRoot: string, query: string, limit: number): Promise<Map<string, string>> {
   return new Promise((resolve) => {
+    if (limit <= 0) {
+      resolve(new Map());
+      return;
+    }
+
+    const matches = new Map<string, string>();
     const proc = spawn(
       "rg",
-      ["--fixed-strings", "--ignore-case", "--max-count", "1", "--json", "--", query, workspaceRoot],
+      [
+        "--fixed-strings",
+        "--ignore-case",
+        "--max-count",
+        "1",
+        "--max-columns",
+        "300",
+        "--max-filesize",
+        "1M",
+        "--json",
+        "--no-messages",
+        "--glob",
+        "!**/node_modules/**",
+        "--glob",
+        "!**/.git/**",
+        "--",
+        query,
+        workspaceRoot,
+      ],
       { stdio: ["ignore", "pipe", "ignore"] },
     );
-    let stdout = "";
-    proc.stdout.on("data", (data: Buffer) => {
-      stdout += data.toString();
-    });
-    const finish = () => {
-      const matches = new Map<string, string>();
-      for (const line of stdout.split("\n")) {
-        if (matches.size >= limit) break;
-        if (!line) continue;
-        try {
-          const msg = JSON.parse(line) as {
-            type: string;
-            data?: { path?: { text?: string }; lines?: { text?: string } };
-          };
-          if (msg.type === "match" && msg.data?.path?.text) {
-            const snippet = (msg.data.lines?.text ?? "").trim().slice(0, 120);
-            matches.set(msg.data.path.text, snippet);
-          }
-        } catch {
-          // bozuk satırı atla
-        }
-      }
+
+    let buffer = "";
+    let outputBytes = 0;
+    let settled = false;
+    let stopped = false;
+
+    const settle = () => {
+      if (settled) return;
+      settled = true;
       resolve(matches);
     };
-    proc.on("close", finish);
-    proc.on("error", () => resolve(new Map()));
+
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      proc.kill("SIGTERM");
+    };
+
+    const consumeLine = (line: string) => {
+      if (matches.size >= limit || !line || line.length > MAX_RIPGREP_JSON_LINE_CHARS) return;
+
+      try {
+        const msg = JSON.parse(line) as {
+          type: string;
+          data?: { path?: { text?: string }; lines?: { text?: string } };
+        };
+        if (msg.type === "match" && msg.data?.path?.text) {
+          const snippet = (msg.data.lines?.text ?? "").trim().slice(0, 120);
+          matches.set(msg.data.path.text, snippet);
+          if (matches.size >= limit) stop();
+        }
+      } catch {
+        // bozuk satırı atla
+      }
+    };
+
+    proc.stdout.on("data", (data: Buffer) => {
+      if (settled) return;
+
+      outputBytes += data.byteLength;
+      if (outputBytes > MAX_SEARCH_OUTPUT_BYTES) {
+        stop();
+        return;
+      }
+
+      buffer += data.toString("utf-8");
+      let newlineIndex = buffer.indexOf("\n");
+      while (newlineIndex >= 0) {
+        const line = buffer.slice(0, newlineIndex);
+        buffer = buffer.slice(newlineIndex + 1);
+        consumeLine(line);
+        if (stopped) break;
+        newlineIndex = buffer.indexOf("\n");
+      }
+
+      if (buffer.length > MAX_RIPGREP_JSON_LINE_CHARS) {
+        buffer = "";
+      }
+    });
+
+    proc.on("close", () => {
+      if (buffer && !stopped) {
+        consumeLine(buffer);
+      }
+      settle();
+    });
+    proc.on("error", settle);
   });
 }
 
@@ -78,8 +145,17 @@ export const openaiSearch: ToolDefinition = {
   handler: async (args) => {
     const { query } = searchInputSchema.parse(args);
     const { WORKSPACE_ROOT } = loadConfig();
+    const normalizedQuery = query.trim();
 
-    const nameMatches = await fg(`**/*${fg.escapePath(query)}*`, {
+    if (!normalizedQuery) {
+      const structuredContent = { results: [] };
+      return {
+        structuredContent,
+        content: [{ type: "text" as const, text: JSON.stringify(structuredContent) }],
+      };
+    }
+
+    const nameMatches = await fg(`**/*${fg.escapePath(normalizedQuery)}*`, {
       cwd: WORKSPACE_ROOT,
       absolute: true,
       onlyFiles: true,
@@ -89,8 +165,6 @@ export const openaiSearch: ToolDefinition = {
       suppressErrors: true,
     }).catch(() => [] as string[]);
 
-    const contentMatches = await searchContent(WORKSPACE_ROOT, query, MAX_RESULTS);
-
     const results: SearchResult[] = [];
     const seen = new Set<string>();
     for (const abs of nameMatches) {
@@ -99,6 +173,8 @@ export const openaiSearch: ToolDefinition = {
       seen.add(abs);
       results.push(toResult(WORKSPACE_ROOT, abs));
     }
+
+    const contentMatches = await searchContent(WORKSPACE_ROOT, normalizedQuery, MAX_RESULTS - results.length);
     for (const [abs, snippet] of contentMatches) {
       if (results.length >= MAX_RESULTS) break;
       if (seen.has(abs)) continue;
@@ -106,8 +182,10 @@ export const openaiSearch: ToolDefinition = {
       results.push(toResult(WORKSPACE_ROOT, abs, snippet));
     }
 
+    const structuredContent = { results };
     return {
-      content: [{ type: "text" as const, text: JSON.stringify({ results }) }],
+      structuredContent,
+      content: [{ type: "text" as const, text: JSON.stringify(structuredContent) }],
     };
   },
 };
@@ -152,6 +230,7 @@ export const openaiFetch: ToolDefinition = {
     };
 
     return {
+      structuredContent: document,
       content: [{ type: "text" as const, text: JSON.stringify(document) }],
     };
   },
